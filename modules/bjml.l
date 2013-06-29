@@ -126,15 +126,19 @@
 
 (defmethod display ((pl player) &aux type)
   (dolist (hand (player-hands pl))
-    (let ()
+    (progn
       (format t "Your cards:~%")
-      (dolist (card (mapcar #'card-to-string hand))
-        (format t "~A~%" card))
+      ;(loop for card in (mapcar #'card-to-string hand) do
+      ;  (format t "~A~%" card))
+      (mapc (lambda (card)
+              (princ card)
+              (fresh-line))
+            (mapcar #'card-to-string hand))
       (format t "That's a ")
       (setf type (evaluate-hand hand))
       (if (or (eq type 'soft) (eq type 'hard))
-        (format t "~A ~A.~%" type (calculate-total hand))
-        (format t "~A.~%" type))))
+          (format t "~A ~A.~%" type (calculate-total hand))
+          (format t "~A.~%" type))))
   (format t "Cash: ~A~%~%" (player-cash pl)))
 
 (defmethod display1 ((pl player) &aux type)
@@ -144,8 +148,8 @@
   (format t "That's a ")
   (setf type (evaluate-hand (player-current-hand pl)))
   (if (or (eq type 'soft) (eq type 'hard))
-    (format t "~A ~A.~%" type (calculate-total (player-current-hand pl)))
-    (format t "~A.~%" type))
+      (format t "~A ~A.~%" type (calculate-total (player-current-hand pl)))
+      (format t "~A.~%" type))
   (format t "Bet on hand: ~A.~%" (player-current-bet pl))
   (format t "Cash: ~A.~%~%" (player-cash pl)))
 
@@ -184,7 +188,7 @@
 ;;; Play a hand of blackjack.
 (defmethod play-hand ((dl dealer) (pl player) &aux bet action result total dealer-total starting-cash)
   (setf starting-cash (player-cash pl))
-  (if (= 1 (length (player-current-hand pl)))
+  (when (= 1 (length (player-current-hand pl)))
     (hit dl pl))
   (display dl)
   (display1 pl)
@@ -192,25 +196,23 @@
   (format t "Betting ~A.~%" (player-current-bet pl))
   (setf action (pick-initial-action pl dl))
   ;; If the player doubles down, double its bet and end the hand.
-  (if (eq action 'dd)
-    (let ()
-      (setf (player-bets pl) (cons (* 2 (player-current-bet pl)) (cdr (player-bets pl))))
-      (setf (player-cash pl) (- (player-cash pl) (player-current-bet pl)))
-      (hit dl pl)))
-  (if (eq action 'ht)
+  (when (eq action 'dd)
+    (setf (player-bets pl) (cons (* 2 (player-current-bet pl)) (cdr (player-bets pl))))
+    (setf (player-cash pl) (- (player-cash pl) (player-current-bet pl)))
     (hit dl pl))
-  (if (eq action 'sp)
-    (let ()
-      (setf (player-hands pl) (append (player-hands pl) (list (list (second (first (player-hands pl)))))))
-      (setf (player-bets pl) (append (player-bets pl) (list (player-current-bet pl))))
-      (setf (player-cash pl) (- (player-cash pl) (player-current-bet pl)))
-      (hit dl pl)))
+  (when (eq action 'ht)
+    (hit dl pl))
+  (when (eq action 'sp)
+    (setf (player-hands pl) (append (player-hands pl) (list (list (second (first (player-hands pl)))))))
+    (setf (player-bets pl) (append (player-bets pl) (list (player-current-bet pl))))
+    (setf (player-cash pl) (- (player-cash pl) (player-current-bet pl)))
+    (hit dl pl))
   (setf result (evaluate-hand (first (player-hands pl))))
   (display1 pl)
   ;; Let the player continue hitting or end when it stands, busts, or gets a blackjack.
   (loop while (not (or (eq action 'dd) (eq action 'st) (eq result 'bust) (eq result 'blackjack))) do
     (setf action (pick-subsequent-action pl dl))
-    (if (eq action 'ht)
+    (when (eq action 'ht)
       (hit dl pl))
     (setf result (evaluate-hand (first (player-hands pl))))
     (display1 pl))
@@ -218,7 +220,7 @@
   (setf total (calculate-total (first (player-hands pl))))
   (setf dealer-total (calculate-total (dealer-hand dl)))
   (loop while (< dealer-total 17) do
-    (let ()
+    (progn
       (draw-one dl)
       (setf dealer-total (calculate-total (dealer-hand dl)))))
   (display1 pl)
@@ -241,7 +243,7 @@
   (setf values (substitute 11 'ace values))
   (setf total (reduce #'+ values))
   (loop while (and (> total 21) (member 11 values)) do
-    (let ()
+    (progn
       (setf values (substitute 1 11 values :count 1))
       (setf total (reduce #'+ values))))
   total)
@@ -305,38 +307,36 @@
 ;;; Allow a human player to select a bet.
 (defmethod make-bet ((pl human-player) &aux bet)
   (loop while (null bet) do
-    (let ()
+    (progn
       (format t "Select a bet between 5 and 100.~%> ")
       (setf bet (read))
       (if (numberp bet)
-        (cond 
-          ((or (< bet 5) (> bet 100))
-            (format t "That is outside the betting range.~%"))
-          ((> bet (player-cash pl))
-            (format t "You don't have that much money.~%")))
-        (let ()
-          (format t "That is not a number.~%")
-          (setf bet nil)))))
+          (cond 
+            ((or (< bet 5) (> bet 100))
+              (format t "That is outside the betting range.~%"))
+            ((> bet (player-cash pl))
+              (format t "You don't have that much money.~%")))
+          (progn
+            (format t "That is not a number.~%")
+            (setf bet nil)))))
       (setf (player-cash pl) (- (player-cash pl) bet))
       (setf (player-bets pl) (cons bet (player-bets pl))))
 
 ;;; Allow a human player to select its initial move.
 (defmethod pick-initial-action ((pl human-player) (dl dealer) &aux moves action)
   (setf moves '(ht st dd))
-  (if (eq (evaluate-hand (player-current-hand pl)) 'pair)
+  (when (eq (evaluate-hand (player-current-hand pl)) 'pair)
     (setf moves (cons 'sp moves)))
   (loop while (null action) do
     (format t "Select an action: ~A~%> " moves)
     (setf action (read))
-    (if (not (member action moves))
-      (let ()
-        (format t "That's not an available action.~%")
-        (setf action nil)))
+    (when (not (member action moves))
+      (format t "That's not an available action.~%")
+      (setf action nil))
     ;; Can the player double-down?
-    (if (and (eq action 'dd) (> (player-current-bet pl) (player-cash pl)))
-      (let ()
-        (format t "You don't have enough cash to double down.~%")
-        (setf action nil))))
+    (when (and (eq action 'dd) (> (player-current-bet pl) (player-cash pl)))
+      (format t "You don't have enough cash to double down.~%")
+      (setf action nil)))
   action)
 
 ;;; Allow a human to pick actions after the first action.
@@ -345,10 +345,9 @@
   (loop while (null action) do
     (format t "Select an action: ~A~%> " moves)
     (setf action (read))
-    (if (not (member action moves))
-      (let ()
-        (format t "That's not an available action.")
-        (setf action nil))))
+    (when (not (member action moves))
+      (format t "That's not an available action.")
+      (setf action nil)))
   action)
 
 ;;; ------------------------------
@@ -370,7 +369,7 @@
 ;;; Randomly choose a first action.
 (defmethod pick-initial-action ((pl random-player) (dl dealer) &aux moves action)
   (setf moves '(st ht))
-  (if (<= (player-current-bet pl) (player-cash pl))
+  (when (<= (player-current-bet pl) (player-cash pl))
     (setf moves (cons 'dd moves)))
   (setf action (nth (random (length moves)) moves))
   (format t "Action: ~A~%" action)
@@ -403,12 +402,12 @@
   (setf hand-type (evaluate-hand (first (player-hands pl))))
   (setf hand-total (calculate-total (first (player-hands pl))))
   (setf dealer-card (first (first (dealer-hand dl))))
-  (if (member dealer-card '(jack queen king))
+  (when (member dealer-card '(jack queen king))
     (setf dealer-card 10))
   (cond
     ((and (eq hand-type 'pair) (>= (player-cash pl) (player-current-bet pl)))
       (setf rank (first (first (first (player-hands pl)))))
-      (if (member rank '(jack queen king))
+      (when (member rank '(jack queen king))
         (setf rank 10))
       (cond
         ((eq rank 'ace) (setf action 'sp))
@@ -492,7 +491,7 @@
           (cond
             ((member dealer-card '(5 6)) (setf action 'dd))
             (t (setf action 'ht)))))))
-  (if (and (eq action 'dd) (> (player-current-bet pl) (player-cash pl)))
+  (when (and (eq action 'dd) (> (player-current-bet pl) (player-cash pl)))
     (setf action 'ht))
   action)
 
@@ -501,7 +500,7 @@
   (setf hand-type (evaluate-hand (first (player-hands pl))))
   (setf hand-total (calculate-total (first (player-hands pl))))
   (setf dealer-card (first (first (dealer-hand dl))))
-  (if (member dealer-card '(jack queen king))
+  (when (member dealer-card '(jack queen king))
     (setf dealer-card 10))
   (cond
     ((eq hand-type 'hard)
@@ -561,10 +560,10 @@
   (let ((success nil) (successes 0))
     (learning-setup)
     (dotimes (x n)
-      (if (play-with-learning m d)
+      (when (play-with-learning m d)
         (setf success t))
-      (if show (format t "~A: ~A~%" x success))
-      (if success (setf successes (1+ successes)))
+      (when show (format t "~A: ~A~%" x success))
+      (when success (setf successes (1+ successes)))
       (setf success nil))
     successes))
 
@@ -572,10 +571,10 @@
   (let ((success nil) (successes 0))
     (setf (learning-player-mode m) t)
     (dotimes (x n)
-      (if (play-without-learning m d)
+      (when (play-without-learning m d)
         (setf success t))
-      (if show (format t "~A: ~A~%" x success))
-      (if success (setf successes (1+ successes)))
+      (when show (format t "~A: ~A~%" x success))
+      (when success (setf successes (1+ successes)))
       (setf success nil))
     successes))
 
@@ -584,10 +583,10 @@
   (setf d (make-instance 'dealer :deck (make-instance 'shoe)))
   (let ((success nil) (successes 0))
     (dotimes (x n)
-      (if (play-without-learning b d)
+      (when (play-without-learning b d)
         (setf success t))
-      (if show (format t "~A: ~A~%" x success))
-      (if success (setf successes (1+ successes)))
+      (when show (format t "~A: ~A~%" x success))
+      (when success (setf successes (1+ successes)))
       (setf success nil))
     successes))
 
@@ -616,54 +615,14 @@
 ;;; Middle layer: each "column" represents the dealer's hand.
 ;;; Innermost layer: each... "third-dimensional-thingy" represents the action taken, of (ht st dd sp).
 (defmethod create-initial-rule-base ()
-  '(((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))
-    ((0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25) (0.25 0.25 0.25 0.25))))
+  (make-list 28
+    :initial-element (make-list 10
+      :initial-element (make-list 4 :initial-element 0.25))))
 
 (defmethod create-subsequent-rule-base ()
-  '(((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))
-    ((0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5) (0.5 0.5))))
+  (make-list 18
+    :initial-element (make-list 10
+      :initial-element (make-list 2 :initial-element 0.5))))
 
 ;;; Let a learning player choose a bet.
 (defmethod make-bet ((pl learning-player) &aux bet)
@@ -678,7 +637,7 @@
   (cond
     ((eq hand-type 'pair)
       (setf rank (first (first (first (player-hands pl)))))
-      (if (member rank '(jack queen king))
+      (when (member rank '(jack queen king))
         (setf rank 10))
       (cond
         ((eq rank 'ace) 0)
@@ -746,7 +705,7 @@
 ;;; Given the dealer, return the index of the appropriate column of the rule base.
 (defmethod dealer-card-index ((dl dealer) &aux dealer-card)
   (setf dealer-card (first (first (dealer-hand dl))))
-  (if (member dealer-card '(jack queen king))
+  (when (member dealer-card '(jack queen king))
     (setf dealer-card 10))
   (cond
     ((eq dealer-card 'ace) 0)
@@ -771,11 +730,11 @@
 ;;; Given a list of four probabilities, pick the move with the highest one.
 (defmethod initial-highest-of ((l list) &aux highest)
   (setf highest 'ht)
-  (if (> (second l) (first l))
+  (when (> (second l) (first l))
     (setf highest 'st))
-  (if (> (third l) (second l))
+  (when (> (third l) (second l))
     (setf highest 'dd))
-  (if (> (fourth l) (third l))
+  (when (> (fourth l) (third l))
     (setf highest 'sp))
   highest)
 
@@ -788,33 +747,38 @@
     (t 'sp)))
 
 (defmethod subsequent-highest-of ((l list))
-  (if (>= (first l) (second l)) 'ht 'st))
+  (if (>= (first l) (second l))
+      'ht
+      'st))
 
 (defmethod subsequent-random-from ((l list) &aux rand)
   (setf rand (/ (float (random 100)) 100.0))
-  (if (<= rand (first l)) 'ht 'st))
+  (if (<= rand (first l))
+      'ht
+      'st))
 
 ;;; Let a learning player pick its first move.
 (defmethod pick-initial-action ((pl learning-player) (dl dealer) &aux moves action hand-type)
   (setf moves '(st ht))
   (setf hand-type (evaluate-hand (first (player-hands pl))))
-  (if (<= (player-current-bet pl) (player-cash pl))
+  (when (<= (player-current-bet pl) (player-cash pl))
     (setf moves (cons 'dd moves)))
-  (if (and (eq hand-type 'pair) (>= (player-cash pl) (player-current-bet pl)))
+  (when (and (eq hand-type 'pair) (>= (player-cash pl) (player-current-bet pl)))
     (setf moves (cons 'sp moves)))
   (if (learning-player-mode pl)
-    ;; mode set to t: play using heuristics
-    (setf action (initial-random-from (nth (dealer-card-index dl) (nth (initial-player-hand-index pl) (learning-player-initial-rules pl)))))
-    ;; mode set to nil: play randomly
-    (setf action (nth (random (length moves)) moves)))
+      ;; mode set to t: play using heuristics
+      (setf action 
+            (initial-random-from (nth (dealer-card-index dl) (nth (initial-player-hand-index pl) (learning-player-initial-rules pl)))))
+      ;; mode set to nil: play randomly
+      (setf action (nth (random (length moves)) moves)))
   action)
 
 ;;; Let a learning player pick subsequent moves.
 (defmethod pick-subsequent-action ((pl learning-player) (dl dealer))
   (setf moves '(ht st))
   (if (learning-player-mode pl)
-    (setf action (subsequent-random-from (nth (dealer-card-index dl) (nth (subsequent-player-hand-index pl) (learning-player-subsequent-rules pl)))))
-    (setf action (nth (random (length moves)) moves)))
+      (setf action (subsequent-random-from (nth (dealer-card-index dl) (nth (subsequent-player-hand-index pl) (learning-player-subsequent-rules pl)))))
+      (setf action (nth (random (length moves)) moves)))
   action)
 
 ;;; Let a learning player play a hand and modify its rule base.
@@ -827,17 +791,15 @@
   (setf d-c-index (dealer-card-index dl))
   (setf action (pick-initial-action pl dl))
   ;; If the player doubles down, double its bet and end the hand.
-  (if (eq action 'dd)
-    (let ()
-      (setf (player-cash pl) (- (values (player-cash pl)) (player-current-bet pl)))
-      (setf (player-bets pl) (cons (* 2 (player-current-bet pl)) (cdr (player-bets pl))))
-      (hit dl pl)))
-  (if (eq action 'ht)
+  (when (eq action 'dd)
+    (setf (player-cash pl) (- (values (player-cash pl)) (player-current-bet pl)))
+    (setf (player-bets pl) (cons (* 2 (player-current-bet pl)) (cdr (player-bets pl))))
     (hit dl pl))
-  (if (eq action 'sp)
-    (let ()
-      (setf (player-hands pl) (append (player-hands pl) (list (list (second (first (player-hands pl)))))))
-      (hit dl pl)))
+  (when (eq action 'ht)
+    (hit dl pl))
+  (when (eq action 'sp)
+    (setf (player-hands pl) (append (player-hands pl) (list (list (second (first (player-hands pl)))))))
+    (hit dl pl))
   (setf result (evaluate-hand (first (player-hands pl))))
   (setf data (list (list (action-index action) p-h-index d-c-index)))
   ;; Let the player continue hitting or end when it stands, busts, or gets a blackjack.
@@ -845,21 +807,21 @@
     (setf p-h-index (subsequent-player-hand-index pl))
     (setf d-c-index (dealer-card-index dl))
     (setf action (pick-subsequent-action pl dl))
-    (if (eq action 'ht)
+    (when (eq action 'ht)
       (hit dl pl))
     (setf result (evaluate-hand (first (player-hands pl))))
     (setf data (append data (list (list (action-index action) p-h-index d-c-index)))))
   (setf total (calculate-total (first (player-hands pl))))
   (setf dealer-total (calculate-total (dealer-hand dl)))
   (loop while (< dealer-total 17) do
-    (let ()
+    (progn
       (draw-one dl)
       (setf dealer-total (calculate-total (dealer-hand dl)))))
   (determine-outcome pl dl)
   (setf (player-cash pl) (+ (player-cash pl) (first (player-bets pl))))
   (if (>= (values (player-cash pl)) starting-cash)
-    (setf successful t)
-    (setf successful nil))
+      (setf successful t)
+      (setf successful nil))
   (update-data successful data pl)
   (setf (player-cash pl) starting-cash)
   (setf (player-hands pl) ())
@@ -875,35 +837,33 @@
   (make-bet pl)
   (setf action (pick-initial-action pl dl))
   ;; If the player doubles down, double its bet and end the hand.
-  (if (eq action 'dd)
-    (let ()
-      (setf (player-cash pl) (- (values (player-cash pl)) (player-current-bet pl)))
-      (setf (player-bets pl) (cons (* 2 (player-current-bet pl)) (cdr (player-bets pl))))
-      (hit dl pl)))
-  (if (eq action 'ht)
+  (when (eq action 'dd)
+    (setf (player-cash pl) (- (values (player-cash pl)) (player-current-bet pl)))
+    (setf (player-bets pl) (cons (* 2 (player-current-bet pl)) (cdr (player-bets pl))))
     (hit dl pl))
-  (if (eq action 'sp)
-    (let ()
-      (setf (player-hands pl) (append (player-hands pl) (list (list (second (first (player-hands pl)))))))
-      (hit dl pl)))
+  (when (eq action 'ht)
+    (hit dl pl))
+  (when (eq action 'sp)
+    (setf (player-hands pl) (append (player-hands pl) (list (list (second (first (player-hands pl)))))))
+    (hit dl pl))
   (setf result (evaluate-hand (first (player-hands pl))))
   ;; Let the player continue hitting or end when it stands, busts, or gets a blackjack.
   (loop while (not (or (eq action 'dd) (eq action 'st) (eq result 'bust) (eq result 'blackjack))) do
     (setf action (pick-subsequent-action pl dl))
-    (if (eq action 'ht)
+    (when (eq action 'ht)
       (hit dl pl))
     (setf result (evaluate-hand (first (player-hands pl)))))
   (setf total (calculate-total (first (player-hands pl))))
   (setf dealer-total (calculate-total (dealer-hand dl)))
   (loop while (< dealer-total 17) do
-    (let ()
+    (progn
       (draw-one dl)
       (setf dealer-total (calculate-total (dealer-hand dl)))))
   (determine-outcome pl dl)
   (setf (player-cash pl) (+ (player-cash pl) (first (player-bets pl))))
   (if (>= (values (player-cash pl)) starting-cash)
-    (setf successful t)
-    (setf successful nil))
+      (setf successful t)
+      (setf successful nil))
   (setf (player-cash pl) starting-cash)
   (setf (player-hands pl) ())
   (setf (player-bets pl) nil)
@@ -915,8 +875,8 @@
   (setf datum (first data))
   (update-initial-rules success datum pl)
   (setf data (cdr data))
-  (if (not (null data))
-    (dolist (datum data)
+  (when (not (null data))
+    (loop for datum in data do
       (update-subsequent-rules success datum pl))))
 
 ;;; Update an individual cell in the player's initial rule base.
@@ -925,10 +885,12 @@
   (setf ph (second data))
   (setf dc (third data))
   (setf cell (nth dc (nth ph (learning-player-initial-rules pl))))
-  (if success
-    (let ()
-      (setf (nth act cell) (1+ (nth act cell)))
-      (setf (nth dc (nth ph (learning-player-initial-rules pl))) (mapcar #'(lambda (x) (/ x 2)) cell)))))
+  (when success
+    (setf (nth act cell) (1+ (nth act cell)))
+    (setf (nth dc (nth ph (learning-player-initial-rules pl)))
+          (mapcar (lambda (x)
+                    (/ x 2))
+                  cell))))
 
 ;;; Update an individual cell in the player's subsequent rule base.
 (defmethod update-subsequent-rules ((success symbol) (data list) (pl learning-player) &aux act ph dc rule cell)
@@ -936,7 +898,6 @@
   (setf ph (second data))
   (setf dc (third data))
   (setf cell (nth dc (nth ph (learning-player-subsequent-rules pl))))
-  (if success
-    (let ()
-      (setf (nth act cell) (1+ (nth act cell)))
-      (setf (nth dc (nth ph (learning-player-subsequent-rules pl))) (mapcar #'(lambda (x) (/ x 2)) cell)))))
+  (when success
+    (setf (nth act cell) (1+ (nth act cell)))
+    (setf (nth dc (nth ph (learning-player-subsequent-rules pl))) (mapcar #'(lambda (x) (/ x 2)) cell))))
